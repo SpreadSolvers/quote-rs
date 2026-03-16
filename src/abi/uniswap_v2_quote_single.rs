@@ -1,6 +1,59 @@
 use alloy::sol;
 
 sol! {
+    interface IUniswapV2Pair {
+        event Approval(address indexed owner, address indexed spender, uint256 value);
+        event Transfer(address indexed from, address indexed to, uint256 value);
+
+        function name() external pure returns (string memory);
+        function symbol() external pure returns (string memory);
+        function decimals() external pure returns (uint8);
+        function totalSupply() external view returns (uint256);
+        function balanceOf(address owner) external view returns (uint256);
+        function allowance(address owner, address spender) external view returns (uint256);
+
+        function approve(address spender, uint256 value) external returns (bool);
+        function transfer(address to, uint256 value) external returns (bool);
+        function transferFrom(address from, address to, uint256 value) external returns (bool);
+
+        function DOMAIN_SEPARATOR() external view returns (bytes32);
+        function PERMIT_TYPEHASH() external pure returns (bytes32);
+        function nonces(address owner) external view returns (uint256);
+
+        function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+            external;
+
+        event Mint(address indexed sender, uint256 amount0, uint256 amount1);
+        event Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to);
+        event Swap(
+            address indexed sender,
+            uint256 amount0In,
+            uint256 amount1In,
+            uint256 amount0Out,
+            uint256 amount1Out,
+            address indexed to
+        );
+        event Sync(uint112 reserve0, uint112 reserve1);
+
+        function MINIMUM_LIQUIDITY() external pure returns (uint256);
+        function factory() external view returns (address);
+        function token0() external view returns (address);
+        function token1() external view returns (address);
+        function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
+        function price0CumulativeLast() external view returns (uint256);
+        function price1CumulativeLast() external view returns (uint256);
+        function kLast() external view returns (uint256);
+
+        function mint(address to) external returns (uint256 liquidity);
+        function burn(address to) external returns (uint256 amount0, uint256 amount1);
+        function swap(uint256 amount0Out, uint256 amount1Out, address to, bytes calldata data) external;
+        function skim(address to) external;
+        function sync() external;
+
+        function initialize(address, address) external;
+    }
+
+
     interface IUniswapV2Factory {
         function getPair(address tokenA, address tokenB) external view returns (address pair);
     }
@@ -10,27 +63,30 @@ sol! {
      * @dev Pair uses 0.3% fee (balance*1000 - amountIn*3). If the protocol's router/frontend
      *      applies an extra protocol fee (e.g. Voltage), set protocolFeeBps so the quote matches.
      */
-    #[sol(rpc)]
-    contract UniswapV2Quoter {
+    #[sol(rpc, bytecode="608080604052346102905760808161037b803803809161001f8285610306565b833981010312610290576100328161033f565b9061003f6020820161033f565b6040808301516060938401519151630240bc6b60e21b815291946001600160a01b03169390929082600481875afa91821561029d5760009081936102a9575b50604051630dfe168160e01b81526001600160701b03938416959390911692602090829060049082905afa90811561029d5760009161025e575b506001600160a01b039182169116036102585791905b80156101ff578215918215806101f6575b156101a0576103e582029182046103e503610169576100fe9082610367565b916103e884029384046103e814171561016957820180921161016957811561018a570480918015158061017f575b610146575b8263bbd6b10b60e01b60005260045260246000fd5b61271090810392508211610169576127109161016191610367565b043880610131565b634e487b7160e01b600052601160045260246000fd5b50612710811061012c565b634e487b7160e01b600052601260045260246000fd5b60405162461bcd60e51b815260206004820152602860248201527f556e697377617056324c6962726172793a20494e53554646494349454e545f4c604482015267495155494449545960c01b6064820152608490fd5b508015156100df565b60405162461bcd60e51b815260206004820152602b60248201527f556e697377617056324c6962726172793a20494e53554646494349454e545f4960448201526a1394155517d05353d5539560aa1b6064820152608490fd5b906100ce565b90506020813d602011610295575b8161027960209383610306565b810103126102905761028a9061033f565b386100b8565b600080fd5b3d915061026c565b6040513d6000823e3d90fd5b92506060833d6060116102fe575b816102c460609383610306565b810103126102fb576102d583610353565b9060406102e460208601610353565b94015163ffffffff8116036102fb5750602061007e565b80fd5b3d91506102b7565b601f909101601f19168101906001600160401b0382119082101761032957604052565b634e487b7160e01b600052604160045260246000fd5b51906001600160a01b038216820361029057565b51906001600160701b038216820361029057565b818102929181159184041417156101695756fe")]
+    contract UniswapV2QuoteSingle {
         error AmountOut(uint256 amountOut);
 
         /**
-         * @param _factory         Pair factory (e.g. Voltage).
+         * @param pool         Pair address.
          * @param amountIn         Input amount (path[0] token).
-         * @param path             [tokenIn, tokenOut].
+         * @param tokenIn          Input token address.
          * @param protocolFeeBps   Optional fee in basis points (e.g. 300 = 3%) deducted from amountOut
          *                         to match frontend "amount received" when router takes a cut. Use 0 for raw pair quote.
          */
-        constructor(address _factory, uint256 amountIn, address[] memory path, uint256 protocolFeeBps) {
-            address pair = IUniswapV2Factory(_factory).getPair(path[0], path[1]);
-            (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(pair).getReserves();
+        constructor(address pool, address tokenIn, uint256 amountIn, uint256 protocolFeeBps) {
+            (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(pool).getReserves();
 
-            (uint256 reserveIn, uint256 reserveOut) = path[0] < path[1] ? (reserve0, reserve1) : (reserve1, reserve0);
+            address token0 = IUniswapV2Pair(pool).token0();
+
+            (uint256 reserveIn, uint256 reserveOut) = tokenIn == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
 
             uint256 amountOut = UniswapV2Library.getAmountOut(amountIn, reserveIn, reserveOut);
+
             if (protocolFeeBps > 0 && protocolFeeBps < 10_000) {
                 amountOut = (amountOut * (10_000 - protocolFeeBps)) / 10_000;
             }
+
             revert AmountOut(amountOut);
         }
     }
@@ -46,7 +102,20 @@ sol! {
         // calculates the CREATE2 address for a pair without making any external calls
         function pairFor(address factory, address tokenA, address tokenB) internal pure returns (address pair) {
             (address token0, address token1) = sortTokens(tokenA, tokenB);
-            pair = address(0);
+            pair = address(
+                uint160(
+                    uint256(
+                        keccak256(
+                            abi.encodePacked(
+                                "ff",
+                                factory,
+                                keccak256(abi.encodePacked(token0, token1)),
+                                "96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" // init code hash
+                            )
+                        )
+                    )
+                )
+            );
         }
 
         // fetches and sorts the reserves for a pair
@@ -124,4 +193,5 @@ sol! {
             }
         }
     }
+
 }
