@@ -1,9 +1,40 @@
 use alloy::contract::Error as ContractError;
 use alloy::primitives::{Address, Bytes, U256};
-use alloy::sol_types::SolError;
+use alloy::sol;
+use alloy::sol_types::{SolError, SolValue};
 
 use crate::abi::uniswap_v2_quote_single::UniswapV2QuoteSingle::{self, AmountOut};
 use crate::provider::MyProvider;
+
+sol! {
+    struct QuoterConstructorArgs {
+        address pool;
+        address tokenIn;
+        uint256 amountIn;
+        uint256 protocolFeeBps;
+    }
+}
+
+/// Returns deployment calldata for the quoter (bytecode + encoded constructor args).
+/// Used to run the quoter on a revm instance via CREATE tx.
+pub fn quoter_deployment_data(
+    pool_id: Address,
+    token_in: Address,
+    amount_in: u128,
+    protocol_fee_bps: u128,
+) -> Bytes {
+    let bytecode = UniswapV2QuoteSingle::BYTECODE.as_ref().to_vec();
+    let args = QuoterConstructorArgs {
+        pool: pool_id,
+        tokenIn: token_in,
+        amountIn: U256::from(amount_in),
+        protocolFeeBps: U256::from(protocol_fee_bps),
+    };
+    let encoded = args.abi_encode();
+    let mut out = bytecode;
+    out.extend(encoded);
+    Bytes::from(out)
+}
 
 /// Extracts revert data from contract error. Alloy's `as_revert_data()` only returns data when
 /// `message.contains("revert")`; some RPCs (e.g. Fuse) return "VM execution error." so we also
