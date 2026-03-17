@@ -3,6 +3,9 @@ name = "quote"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+doctest = false
+
 [dependencies]
 alloy = { version = "1.7.3", features = ["json"] }
 hex = "0.4"
@@ -14,3 +17,7 @@ serde = "1.0.228"
 serde_json = "1.0.149"
 thiserror = "2.0.18"
 tokio = { version = "1.50.0", features = ["full"] }
+
+[dev-dependencies]
+foundry-fork-db = "0.24.1"
+revm = "36.0.0"
