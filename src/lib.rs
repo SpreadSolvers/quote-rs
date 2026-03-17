@@ -2,10 +2,12 @@ pub mod abi;
 pub mod provider;
 pub mod types;
 pub mod uniswap_v2;
+pub mod uniswap_v3;
 
 use types::Protocol;
 
 pub const DEFAULT_UNISWAP_V2_FEE_BPS: u128 = 30;
+pub const DEFAULT_UNISWAP_V3_FEE_BPS: u128 = 0;
 
 /// Quote a swap: returns amount_out for given pool, token_in, token_out, amount_in.
 pub async fn quote(
@@ -23,6 +25,16 @@ pub async fn quote(
                 token_in,
                 amount_in,
                 DEFAULT_UNISWAP_V2_FEE_BPS,
+                provider,
+            )
+            .await
+        }
+        Protocol::UniswapV3 => {
+            uniswap_v3::quote(
+                pool_id,
+                token_in,
+                amount_in,
+                DEFAULT_UNISWAP_V3_FEE_BPS,
                 provider,
             )
             .await

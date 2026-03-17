@@ -7,7 +7,7 @@ use log::{debug, warn};
 
 use quote::provider::create_provider;
 use quote::types::Protocol;
-use quote::{DEFAULT_UNISWAP_V2_FEE_BPS, uniswap_v2};
+use quote::{DEFAULT_UNISWAP_V2_FEE_BPS, DEFAULT_UNISWAP_V3_FEE_BPS, uniswap_v2, uniswap_v3};
 
 #[derive(Debug, Parser)]
 #[command(name = "quote")]
@@ -93,6 +93,23 @@ async fn run(args: Args) -> Result<(), clap::Error> {
                 token_in,
                 amount_in,
                 DEFAULT_UNISWAP_V2_FEE_BPS,
+                provider,
+            )
+            .await
+            .map_err(|e| {
+                warn!("Failed to quote: {e}");
+                let mut err = clap::Error::new(clap::error::ErrorKind::Io);
+                err.insert(ContextKind::Custom, ContextValue::String(e.to_string()));
+                err
+            })?;
+            println!("{amount_out}");
+        }
+        Protocol::UniswapV3 => {
+            let amount_out = uniswap_v3::quote(
+                pool_id,
+                token_in,
+                amount_in,
+                DEFAULT_UNISWAP_V3_FEE_BPS,
                 provider,
             )
             .await
