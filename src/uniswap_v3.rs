@@ -3,7 +3,9 @@ use alloy::primitives::{Address, Bytes, U256};
 use alloy::sol;
 use alloy::sol_types::{SolError, SolValue};
 
-use crate::abi::uniswap_v3_quote_single::UniswapV3QuoteSingle::{self, AmountOut};
+use crate::abi::uniswap_v3_quote_single::UniswapV3QuoteSingle::{
+    self, AmountOut, InsufficientLiquidity, PartialFill,
+};
 use crate::provider::MyProvider;
 
 sol! {
@@ -77,7 +79,24 @@ pub async fn quote(
         Err(e) => {
             if let Some(decoded) = e.as_decoded_error::<AmountOut>() {
                 decoded.amountOut.to::<u128>()
+            } else if e.as_decoded_error::<InsufficientLiquidity>().is_some() {
+                return Err("pool has 0 active liquidity".into());
+            } else if let Some(decoded) = e.as_decoded_error::<PartialFill>() {
+                return Err(format!(
+                    "insufficient liquidity: only {} of {} input consumed, would get {} out",
+                    decoded.amountInConsumed, amount_in, decoded.amountOut
+                )
+                .into());
             } else if let Some(bytes) = revert_data_from_error(e) {
+                if InsufficientLiquidity::abi_decode(bytes.as_ref()).is_ok() {
+                    return Err("pool has 0 active liquidity".into());
+                } else if let Ok(decoded) = PartialFill::abi_decode(bytes.as_ref()) {
+                    return Err(format!(
+                        "insufficient liquidity: only {} of {} input consumed, would get {} out",
+                        decoded.amountInConsumed, amount_in, decoded.amountOut
+                    )
+                    .into());
+                }
                 let decoded = AmountOut::abi_decode(bytes.as_ref())
                     .map_err(|_| "Could not decode AmountOut from revert")?;
                 decoded.amountOut.to::<u128>()
