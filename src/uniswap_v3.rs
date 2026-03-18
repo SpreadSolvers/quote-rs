@@ -74,37 +74,26 @@ pub async fn quote(
     .call()
     .await;
 
-    let amount_out = match &result {
-        Ok(_) => return Err("Ephemeral quoter returned success (unexpected)".into()),
-        Err(e) => {
-            if let Some(decoded) = e.as_decoded_error::<AmountOut>() {
-                decoded.amountOut.to::<u128>()
-            } else if e.as_decoded_error::<InsufficientLiquidity>().is_some() {
-                return Err("pool has 0 active liquidity".into());
-            } else if let Some(decoded) = e.as_decoded_error::<PartialFill>() {
-                return Err(format!(
-                    "insufficient liquidity: only {} of {} input consumed, would get {} out",
-                    decoded.amountInConsumed, amount_in, decoded.amountOut
-                )
-                .into());
-            } else if let Some(bytes) = revert_data_from_error(e) {
-                if InsufficientLiquidity::abi_decode(bytes.as_ref()).is_ok() {
-                    return Err("pool has 0 active liquidity".into());
-                } else if let Ok(decoded) = PartialFill::abi_decode(bytes.as_ref()) {
-                    return Err(format!(
-                        "insufficient liquidity: only {} of {} input consumed, would get {} out",
-                        decoded.amountInConsumed, amount_in, decoded.amountOut
-                    )
-                    .into());
-                }
-                let decoded = AmountOut::abi_decode(bytes.as_ref())
-                    .map_err(|_| "Could not decode AmountOut from revert")?;
-                decoded.amountOut.to::<u128>()
-            } else {
-                return Err(format!("Could not decode revert: {e:?}").into());
-            }
-        }
-    };
+    let err = result
+        .err()
+        .ok_or("Ephemeral quoter returned success (unexpected)")?;
 
-    Ok(amount_out)
+    let bytes =
+        revert_data_from_error(&err).ok_or_else(|| format!("Could not decode revert: {err:?}"))?;
+
+    if InsufficientLiquidity::abi_decode(bytes.as_ref()).is_ok() {
+        return Err("pool has 0 active liquidity".into());
+    }
+    if let Ok(pf) = PartialFill::abi_decode(bytes.as_ref()) {
+        return Err(format!(
+            "insufficient liquidity: only {} of {} input consumed, would get {} out",
+            pf.amountInConsumed, amount_in, pf.amountOut
+        )
+        .into());
+    }
+
+    let decoded = AmountOut::abi_decode(bytes.as_ref())
+        .map_err(|_| format!("Could not decode revert: {err:?}"))?;
+
+    Ok(decoded.amountOut.to::<u128>())
 }
