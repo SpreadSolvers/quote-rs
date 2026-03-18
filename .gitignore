@@ -1,3 +1,6 @@
 /target
 .cursorignore
 .env
+
+*.json
+*.txt
