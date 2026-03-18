@@ -2,5 +2,6 @@
 .cursorignore
 .env
 
+# Logs and additional data
 *.json
 *.txt
