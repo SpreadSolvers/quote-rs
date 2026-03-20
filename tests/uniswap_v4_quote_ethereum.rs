@@ -20,8 +20,8 @@ const QUOTER: &str = "0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203";
 /// USDC/WETH 0.05% pool: USDC (0xA0..) < WETH (0xC0..) so currency0=USDC, currency1=WETH
 fn usdc_weth_pool_key() -> PoolKey {
     PoolKey {
-        currency0: Address::from_str(USDC).unwrap(),
-        currency1: Address::from_str(WETH).unwrap(),
+        currency0: Address::from_str(USDC).expect("USDC"),
+        currency1: Address::from_str(WETH).expect("WETH"),
         fee: Uint::from(500u32),
         tickSpacing: alloy::primitives::aliases::I24::try_from(10i32).unwrap(),
         hooks: Address::ZERO,
