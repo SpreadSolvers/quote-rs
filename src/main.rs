@@ -5,12 +5,8 @@ use clap::{Parser, ValueHint};
 use log::{debug, warn};
 use std::str::FromStr;
 
-use quote::provider::create_provider;
+use quote::quote;
 use quote::types::Protocol;
-use quote::{
-    uniswap_v2, uniswap_v3, uniswap_v4, DEFAULT_UNISWAP_V2_FEE_BPS, DEFAULT_UNISWAP_V3_FEE_BPS,
-    DEFAULT_UNISWAP_V4_FEE_BPS,
-};
 
 #[derive(Debug, Parser)]
 #[command(name = "quote")]
@@ -18,7 +14,7 @@ use quote::{
 struct Args {
     /// Pool identifier:
     ///   V2/V3: 20-byte address hex (0x...)
-    ///   V4:    hex-encoded ABI bytes from uniswap_v4::encode_pool_id (poolManager + PoolKey)
+    ///   V4:    32-byte poolId hex
     pool_id: String,
     #[arg(value_enum)]
     protocol: Protocol,
@@ -28,10 +24,16 @@ struct Args {
     amount_in: String,
     #[arg(value_hint = ValueHint::Url)]
     rpc_url: String,
+
+    #[arg(long)]
+    position_manager: Option<Address>,
 }
 
 fn parse_pool_id_bytes(s: &str) -> Result<Bytes, clap::Error> {
-    let hex = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let hex = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
     let raw = hex::decode(hex).map_err(|_| {
         let mut err = clap::Error::new(clap::error::ErrorKind::InvalidValue);
         err.insert(
@@ -75,84 +77,23 @@ async fn run(args: Args) -> Result<(), clap::Error> {
         return Err(err);
     };
 
-    let provider = create_provider(&args.rpc_url).await.map_err(|e| {
-        warn!("Failed to create provider: {e}");
+    let amount_out = quote(
+        pool_id,
+        args.protocol,
+        token_in,
+        amount_in,
+        &args.rpc_url,
+        args.position_manager,
+    )
+    .await
+    .map_err(|e| {
+        warn!("Quote failed: {e}");
         let mut err = clap::Error::new(clap::error::ErrorKind::Io);
-        err.insert(
-            ContextKind::Custom,
-            ContextValue::String("Failed to create Web3 provider".to_string()),
-        );
         err.insert(ContextKind::Custom, ContextValue::String(e.to_string()));
         err
     })?;
 
-    let amount_out = match args.protocol {
-        Protocol::UniswapV2 => {
-            let addr = alloy::primitives::Address::try_from(pool_id.as_ref()).map_err(|_| {
-                let mut err = clap::Error::new(clap::error::ErrorKind::InvalidValue);
-                err.insert(
-                    ContextKind::InvalidValue,
-                    ContextValue::String("V2 pool_id must be a 20-byte address".to_string()),
-                );
-                err
-            })?;
-            uniswap_v2::quote(addr, token_in, amount_in, DEFAULT_UNISWAP_V2_FEE_BPS, provider)
-                .await
-        }
-        Protocol::UniswapV3 => {
-            let addr = alloy::primitives::Address::try_from(pool_id.as_ref()).map_err(|_| {
-                let mut err = clap::Error::new(clap::error::ErrorKind::InvalidValue);
-                err.insert(
-                    ContextKind::InvalidValue,
-                    ContextValue::String("V3 pool_id must be a 20-byte address".to_string()),
-                );
-                err
-            })?;
-            uniswap_v3::quote(addr, token_in, amount_in, DEFAULT_UNISWAP_V3_FEE_BPS, provider)
-                .await
-        }
-        Protocol::UniswapV4 => {
-            let (pool_manager, pool_key) =
-                uniswap_v4::decode_pool_id(&pool_id).map_err(|e| {
-                    warn!("Failed to decode V4 pool_id: {e}");
-                    let mut err = clap::Error::new(clap::error::ErrorKind::InvalidValue);
-                    err.insert(
-                        ContextKind::InvalidValue,
-                        ContextValue::String(format!("Invalid V4 pool_id: {e}")),
-                    );
-                    err
-                })?;
-            uniswap_v4::quote(
-                pool_manager,
-                pool_key,
-                token_in,
-                amount_in,
-                DEFAULT_UNISWAP_V4_FEE_BPS,
-                provider,
-            )
-            .await
-        }
-        _ => {
-            warn!("Not implemented protocol: {:?}", args.protocol);
-            let mut err = clap::Error::new(clap::error::ErrorKind::InvalidValue);
-            err.insert(
-                ContextKind::InvalidValue,
-                ContextValue::String(format!("Protocol not implemented: {:?}", args.protocol)),
-            );
-            return Err(err);
-        }
-    };
-
-    match amount_out {
-        Ok(out) => println!("{out}"),
-        Err(e) => {
-            warn!("Failed to quote: {e}");
-            let mut err = clap::Error::new(clap::error::ErrorKind::Io);
-            err.insert(ContextKind::Custom, ContextValue::String(e.to_string()));
-            return Err(err);
-        }
-    }
-
+    println!("{amount_out}");
     Ok(())
 }
 

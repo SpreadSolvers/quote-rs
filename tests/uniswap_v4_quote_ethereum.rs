@@ -4,7 +4,8 @@
 //! PoolManager: 0x000000000004444c5dc75cB358380D2e3dE08A90
 //! Set ETHEREUM_RPC_URL or RPC_URL to run.
 
-use alloy::primitives::{Address, Uint};
+use alloy::primitives::{keccak256, Address, FixedBytes, Uint};
+use alloy::sol_types::SolValue;
 use alloy::sol;
 use std::str::FromStr;
 
@@ -16,6 +17,12 @@ const POOL_MANAGER: &str = "0x000000000004444c5dc75cB358380D2e3dE08A90";
 const USDC: &str = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const WETH: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const QUOTER: &str = "0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203";
+
+/// Returns bytes32 poolId (keccak256(abi.encode(poolKey))); contract strips to bytes25 for PositionManager.
+fn pool_id_bytes32(pool_key: &PoolKey) -> FixedBytes<32> {
+    let encoded = pool_key.abi_encode();
+    keccak256(&encoded)
+}
 
 /// USDC/WETH 0.05% pool: USDC (0xA0..) < WETH (0xC0..) so currency0=USDC, currency1=WETH
 fn usdc_weth_pool_key() -> PoolKey {
@@ -144,5 +151,36 @@ async fn uniswap_v4_quote_matches_official_quoter_weth_to_usdc() {
     assert_eq!(
         quoted, baseline,
         "uniswap_v4::quote ({quoted}) != official V4 Quoter ({baseline})"
+    );
+}
+
+#[tokio::test]
+async fn uniswap_v4_quote_by_pool_id_matches_official_quoter_usdc_to_weth() {
+    dotenv::dotenv().ok();
+    let rpc_url = rpc_url().expect("ETHEREUM_RPC_URL or RPC_URL required for integration test");
+    let provider = create_provider(&rpc_url).await.expect("provider");
+
+    let pool_key = usdc_weth_pool_key();
+    let pool_id = pool_id_bytes32(&pool_key);
+    let position_manager = uniswap_v4::DEFAULT_POSITION_MANAGER;
+    let token_in = Address::from_str(USDC).unwrap();
+    let amount_in = 1_000_000u128; // 1 USDC
+
+    let quoted = uniswap_v4::quote_by_pool_id(
+        position_manager,
+        pool_id,
+        token_in,
+        amount_in,
+        0,
+        provider.clone(),
+    )
+    .await
+    .expect("uniswap_v4::quote_by_pool_id failed");
+
+    let baseline = official_quoter_amount_out(&provider, &pool_key, true, amount_in).await;
+
+    assert_eq!(
+        quoted, baseline,
+        "uniswap_v4::quote_by_pool_id ({quoted}) != official V4 Quoter ({baseline})"
     );
 }
