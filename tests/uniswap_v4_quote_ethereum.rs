@@ -17,7 +17,7 @@ const POOL_MANAGER: &str = "0x000000000004444c5dc75cB358380D2e3dE08A90";
 const USDC: &str = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const WETH: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const QUOTER: &str = "0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203";
-const ETHEREUM_UNI_V4_POSITION_MANAGER: &str = "0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9ecargo";
+const ETHEREUM_UNI_V4_POSITION_MANAGER: &str = "0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e";
 
 /// Returns bytes32 poolId (keccak256(abi.encode(poolKey))); contract strips to bytes25 for PositionManager.
 fn pool_id_bytes32(pool_key: &PoolKey) -> FixedBytes<32> {
@@ -163,7 +163,9 @@ async fn uniswap_v4_quote_by_pool_id_matches_official_quoter_usdc_to_weth() {
 
     let pool_key = usdc_weth_pool_key();
     let pool_id = pool_id_bytes32(&pool_key);
-    let position_manager = ETHEREUM_UNI_V4_POSITION_MANAGER;
+    let position_manager = ETHEREUM_UNI_V4_POSITION_MANAGER
+        .parse::<Address>()
+        .expect("ETHEREUM_UNI_V4_POSITION_MANAGER");
     let token_in = Address::from_str(USDC).unwrap();
     let amount_in = 1_000_000u128; // 1 USDC
 
